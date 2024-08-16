@@ -1,0 +1,28 @@
+    in
+    call factorial
+    out
+    hlt
+
+:factorial
+    pop rax
+
+    push rax
+    push 1
+    jbe preReturn
+
+        push rax
+
+        push rax
+        push 1
+        sub
+
+        call factorial
+
+        mul
+        jmp return
+
+    :preReturn
+        push 1
+
+    :return
+ret

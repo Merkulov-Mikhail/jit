@@ -1,0 +1,7 @@
+*.exe
+*.o
+*.log
+*.dmp
+*.ass
+build
+jit
