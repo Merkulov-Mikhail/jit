@@ -1,35 +1,28 @@
 #include "config.h"
 #include "ir.h"
-#include "x86.h"
-#include <sys/mman.h>
+// #include <sys/mman.h>
+#include <windows.h>
+#include <memoryapi.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>
 
 
-enum REGISTERS{
-	RAX,
-	RCX,
-	RDX,
-	RBX,
-	RSP,
-	RBP,
-	RSI,
-	RDI
-};
-
-
-const char REGISTER_TO_NAME_MAPPING[16] = {0, 3, 1, 2};
-
 FILE* init_file( int argc, char* argv[] );
 void* create_jit_buffer( uint64_t file_size );
-uint64_t get_buffer_size( uint64_t file_size ); 
-void load_jit_buffer( char* dst, const char* src, uint64_t buf_size );
+uint64_t get_buffer_size( uint64_t file_size );
+void load_jit_buffer( char* jit_buffer, IR_Array* ir_items );
+int get_page_size();
+int* createMappingArray(IR_Array* ir_items, uint64_t size);
+void actualizeAddresses(IR_Array* ir_items, int* mapping);
+
+// TODO : Create ir -> jit
+// ir.totalBytes counter
+// ir.pos_in_file
 
 
 int main(int argc, char* argv[]){
-	printf("im here");
 
 	FILE* asm_file = init_file( argc, argv );
 
@@ -41,31 +34,49 @@ int main(int argc, char* argv[]){
 	fseek( asm_file, 8, SEEK_SET );
 	fread( & ( asm_file_size ), sizeof( uint64_t ), 1, asm_file );
 
-	printf("imhere");
-	char* asm_file_data = ( char* ) calloc( sizeof( char ), asm_file_size - 16 );
+	char* asm_file_data = ( char* ) calloc( sizeof( char ), asm_file_size + 10 );
 	if ( !asm_file_data ) {
 		printf( "Failed to initialize buffer to read assembler file" );
 		return -1;
 	}
 	fseek( asm_file, 16, SEEK_SET );
-	fread( asm_file_data, sizeof( char ), asm_file_size - 16, asm_file );
-
-
-	char* jit_buffer = ( char* ) create_jit_buffer( asm_file_size );	
+	fread( asm_file_data, sizeof( char ), asm_file_size, asm_file );
 
 	IR_Array* ir_items = irArrayCTOR();
 
-	load_jit_buffer( jit_buffer, asm_file_data, get_buffer_size( asm_file_size ) );
-	for ( int i = 0; i < get_buffer_size( asm_file_size ); i++ )
-		printf("%d\n", jit_buffer[i]);
 
-	mprotect( jit_buffer, get_buffer_size( asm_file_size ), PROT_EXEC );
+	load_ir        ( ir_items, asm_file_data, asm_file_size );
 
+	int* mapping_array = createMappingArray(ir_items, asm_file_size);
 
-	printf("---%d---\n", (( short (*)()) jit_buffer )() );
+	char* jit_buffer = ( char* ) create_jit_buffer( asm_file_size );
 
-	free( jit_buffer );
-	free( asm_file_data );
+	actualizeAddresses(ir_items, mapping_array);
+
+	// irArrayDump(ir_items);
+
+	// irArrayDump(ir_items);
+
+	load_jit_buffer( jit_buffer, ir_items );
+
+	#ifdef __linux__
+		mprotect( jit_buffer, get_buffer_size( asm_file_size ), PROT_EXEC );
+	#endif
+	#ifdef _WIN32
+		long unsigned ahahahah = 0;
+		VirtualProtect( jit_buffer, get_buffer_size( asm_file_size ), PAGE_EXECUTE, &ahahahah );
+	#endif
+	printf("----%lld----\n", (( short (*)()) jit_buffer )() );
+
+	#ifdef _WIN32
+		VirtualProtect( jit_buffer, get_buffer_size( asm_file_size ), ahahahah, &ahahahah );
+	#endif
+
+	irArrayDTOR	 ( ir_items );
+	_aligned_free( jit_buffer );
+	free		 ( asm_file_data );
+	free		 ( mapping_array );
+
 	fclose( asm_file );
 }
 
@@ -85,7 +96,7 @@ FILE* init_file( int argc, char* argv[] ) {
 		printf( "File not found\n" );
 		return 0;
 	}
-	
+
 	// Check if the file was created via OWNER's assembly (default - NumMeRiL)
 	char owner[9] = {};
 	fread( owner, sizeof( char ), 8, asm_file );
@@ -101,93 +112,112 @@ FILE* init_file( int argc, char* argv[] ) {
 //Assumes, that cursor of src_file is set on the first byte of the data
 void* create_jit_buffer( uint64_t file_size ) {
 
-	long page_size = sysconf( _SC_PAGE_SIZE );
+	long page_size = get_page_size();
 
 	uint64_t request_size = get_buffer_size( file_size );
 
-	void* buf = aligned_alloc( page_size, request_size );
+	void* buf = _aligned_malloc( request_size, page_size );
 
 	if (!buf) {
 		printf( "A failure acquired while allocating data in aligned_alloc\n" );
 		return 0;
 	}
 
-	memset( buf, 0xc3, request_size );
+	memset( buf, 0xcc, request_size );
 
 	return buf;
 }
 
 
 uint64_t get_buffer_size( uint64_t file_size ) {
-	const long page_size = sysconf( _SC_PAGE_SIZE );
+	const long page_size = get_page_size();
 	// !(!(file_size % page_size)) - returns 1, if page_size is not a divisor of file_size, othervise - 0
 	return ( file_size / page_size + !(!( file_size % page_size )) ) * page_size;
 }
 
 
-void load_jit_buffer( char* dst, const char* src, uint64_t dst_size ) {
-
-	assert(dst);
-	assert(src);
-
-	int  src_pos = 0;
-	int  dst_pos = 0;
-	char command = 0;
-	int imm = 0;
-	int reg = 0;
-	int op_code = 0;
-
-	while ( dst_pos < dst_size ) {
-		command = src[src_pos++];
-
-		switch ( command & ( R_BIT | I_BIT) ){
-			case (R_BIT):
-				reg = src[src_pos++];
-				break;
-			case (I_BIT):
-				imm = *(double*) (src + src_pos);
-				src_pos += 8;
-				break;
-			default:
-				break;
-		};
-
-		op_code = command & ((1 << 5) - 1); 
-		// clears first 3 bytes of command (aka operation code)
-		// so now we have register in reg variable, immidiate const in imm
-		switch ( op_code ) {
-			case (PUSH):
-				{
-				if ( command & R_BIT ) {
-					// PUSH_REG_TO_STACK(REGISTER_TO_NAME_MAPPING(reg));
-				}
-				else if ( command & I_BIT ) {
-					PUSH_IMM_TO_STACK(imm);
-				}
-				break;
-				}
-
-			case (POP):
-				{
-				if (command & R_BIT) {
-					// POP_REG_FROM_STACK(REGISTER_TO_NAME_MAPPING(reg));
-				}
-				else {
-				
-				}
-				break;
-				}
-			case (ADD):
-				{
-				PUSH_REG_TO_STACK (RAX);
-				
-				}
-			default:
-				RETURN_COMMAND();
+int get_page_size() {
+	SYSTEM_INFO si;
+	GetSystemInfo( &si );
+	return si.dwPageSize;
+}
 
 
-		};
+//TODO: irArray realloc
+
+void load_jit_buffer( char* jit_buffer, IR_Array* ir_items ) {
+
+	assert(jit_buffer);
+	assert(ir_items);
+
+	uint64_t jit_pos = 0, ir_pos = 0;
+
+	for (;ir_pos < ir_items->size; ir_pos++) {
+		for (int j = 0; j < MAX_ASSEMBLER_REPRESENTATION; j++) {
+	// 		-----------prefixes-----------
+			for ( int i = 0; i < 4; i++ )
+				if (ir_items->items[ir_pos]->Instructions[j]->prefixes[i] != DEAD_VALUE)
+					jit_buffer[jit_pos++] = ir_items->items[ir_pos]->Instructions[j]->prefixes[i];
+				else
+					break;
+
+	// 		-----------op code-----------
+			for ( int i = 0; i < 3; i++ ){
+				if (ir_items->items[ir_pos]->Instructions[j]->op_code[i] != DEAD_VALUE)
+					jit_buffer[jit_pos++] = ir_items->items[ir_pos]->Instructions[j]->op_code[i];
+				else
+					break;
+			}
+
+			if ( ir_items->items[ir_pos]->Instructions[j]->modR != DEAD_VALUE )
+				jit_buffer[jit_pos++] = ir_items->items[ir_pos]->Instructions[j]->modR;
+
+			if ( ir_items->items[ir_pos]->Instructions[j]->SIB != DEAD_VALUE )
+				jit_buffer[jit_pos++] = ir_items->items[ir_pos]->Instructions[j]->SIB;
+
+	// 		-----------displacement-----------
+			for ( int i = 0; i < 4; i++ )
+				if (ir_items->items[ir_pos]->Instructions[j]->displacement[i] != DEAD_VALUE)
+					jit_buffer[jit_pos++] = ir_items->items[ir_pos]->Instructions[j]->displacement[i];
+				else
+					break;
+
+	// 		-----------immediate-----------
+			for ( int i = 0; i < 4; i++ )
+				if (ir_items->items[ir_pos]->Instructions[j]->immediate[i] != DEAD_VALUE)
+					jit_buffer[jit_pos++] = ir_items->items[ir_pos]->Instructions[j]->immediate[i];
+				else
+					break;
+		}
 	}
 
 	return;
+}
+
+int* createMappingArray(IR_Array* ir_items, uint64_t size) {
+	int* p = (int*) calloc(size, sizeof(int));
+
+	for ( int i = 0; i < ir_items->size; i++ ) {
+		p[ir_items->items[i]->pos_in_file] = ir_items->items[i]->actual_address;
+	}
+
+	return p;
+}
+
+void actualizeAddresses(IR_Array* ir_items, int* mapping) {
+	int imm = 0;
+	for ( int ir_pos = 0; ir_pos < ir_items->size; ir_pos++ ) {
+		for ( int instruction_number = 0; instruction_number < MAX_ASSEMBLER_REPRESENTATION; instruction_number++ ) {
+			if ( ir_items->items[ir_pos]->Instructions[instruction_number]->is_jmp_instruction != DEAD_VALUE ) {
+				imm = ir_items->items[ir_pos]->Instructions[instruction_number]->immediate[0];
+				ir_items->items[ir_pos]->Instructions[instruction_number]->immediate[0] = DEAD_VALUE;
+				ir_items->items[ir_pos]->Instructions[instruction_number]->immediate[1] = DEAD_VALUE;
+				ir_items->items[ir_pos]->Instructions[instruction_number]->immediate[2] = DEAD_VALUE;
+				ir_items->items[ir_pos]->Instructions[instruction_number]->immediate[3] = DEAD_VALUE;
+				ir_items->items[ir_pos]->Instructions[instruction_number]->total_bytes -= 4;
+				ir_items->items[ir_pos]->total_bytes -= 4;
+				INSTRUCTION_ADD_DISPLACEMENT(mapping[imm] - ir_items->items[ir_pos]->actual_address);
+			}
+		}
+	}
 }

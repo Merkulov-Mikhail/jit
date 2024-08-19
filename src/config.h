@@ -5,6 +5,7 @@
 
     #include <stdlib.h>
     #include <inttypes.h>
+    #include "stack.h"
 
 
     #define LOGGING
@@ -25,6 +26,8 @@
 
     const int MAX_LINE_LENGTH = 200;
     const uint64_t LABEL_COUNT = (uint64_t) 1024 * 1024 * 1024;
+
+    const int64_t RAM_SIZE = 1024 * 1024 * sizeof( elem_t );
 
     const int RECURSION_LIMIT = 1000;
 

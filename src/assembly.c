@@ -47,11 +47,15 @@ int main(int argc, char* argv[]){
     void* commandSegment = calloc( sizeof( char ), size );
 
     // Shows how many bytes have been written in current page
-    uint64_t usedBytes       = 16;
+    uint64_t usedBytes       = 0;
 
     // Shows how many bytes have been written in total
     // Used to write named labels
-    uint64_t globalUsedBytes = 0;
+    uint64_t globalUsedBytes = 16;
+
+    fseek(output, 0, SEEK_SET);
+    fwrite( OWNER_NAME, sizeof( char ), 8, output );
+    fwrite( &( globalUsedBytes ), sizeof( uint64_t ), 1, output );
 
     uint64_t step            = 1;
     int retValue             = 0;
@@ -148,15 +152,15 @@ int main(int argc, char* argv[]){
                             strncpy( labelPoints[labelPointsCounter].labelName, labelName, strlen( labelName ) );
 
                             labelPointsCounter++;
-                            usedBytes += sizeof( double );
-                            globalUsedBytes += sizeof(double);
+                            usedBytes += sizeof( uint64_t );
+                            globalUsedBytes += sizeof(uint64_t);
 
                     }
                 }
                 else if ( res == 1 ){
-                    *( double* ) ( commandSegment + usedBytes ) = value;
-                    usedBytes += sizeof( double );
-                    globalUsedBytes += sizeof( double );
+                    *( uint64_t* ) ( commandSegment + usedBytes ) = value;
+                    usedBytes += sizeof( uint64_t );
+                    globalUsedBytes += sizeof( uint64_t );
                 }
                 else{
                     printf( "[%d] ERROR: Unknown data after argument\n", step );
@@ -192,9 +196,9 @@ int main(int argc, char* argv[]){
                         *( char* )   ( commandSegment + usedBytes++ ) = comNum | I_BIT;
                         globalUsedBytes++;
 
-                        sscanf( buf, "%lf", ( double* ) ( commandSegment + usedBytes ) );
+                        sscanf( buf, "%lld", ( uint64_t* ) ( commandSegment + usedBytes ) );
 
-                        usedBytes += sizeof( double );
+                        usedBytes += sizeof( uint64_t );
                         globalUsedBytes += 8;
 
                         break;
@@ -244,7 +248,7 @@ int main(int argc, char* argv[]){
 
     }
     fclose( input );
-
+    globalUsedBytes += usedBytes;
     fwrite( commandSegment, sizeof( char ), usedBytes, output );
     for (     uint64_t pointsPos = 0; pointsPos < labelPointsCounter; pointsPos++ ) {
         int foundLabel = 0;
@@ -265,9 +269,8 @@ int main(int argc, char* argv[]){
             break;
         }
     }
-	
-    fseek(output, 0, SEEK_SET);
-    fwrite( OWNER_NAME, sizeof( char ), 8, output );
+
+    fseek(output, 8, SEEK_SET);
     fwrite( &( globalUsedBytes ), sizeof( uint64_t ), 1, output );
 
     fclose( output );
@@ -328,15 +331,55 @@ int isRegister(const char* buf){
     if ( buf[0] == '[' && buf[4] == ']' )
         buf++;
 
-    if ( buf[0] == 'r' && buf[2] == 'x' && buf[1] - 'a' < 4 ){ // push r?x qweasd
+    if ( sscanf( buf, "%*s %*s" ) == 2 )
+        return UNKNOWN_DATA;
 
-        if ( sscanf( buf, "%*s %*s" ) == 2 ) // catching qweasd
-            return UNKNOWN_DATA;
-
-        else // no qweasd, all Good
-            return buf[1] - 'a';
+    switch (buf[0] + buf[1] * 56 + buf[2] * 56 * 56) {
+        case 'r' + 'a' * 56 + 'x' * 56* 56:
+            return 0;
+        case 'r' + 'b' * 56 + 'x' * 56 * 56:
+            return 1;
+        case 'r' + 'c' * 56 + 'x' * 56 * 56:
+            return 2;
+        case 'r' + 'd' * 56 + 'x' * 56 * 56:
+            return 3;
+        case 'r' + 's' * 56 + 'p' * 56 * 56:
+            return 4;
+        case 'r' + 'b' * 56 + 'p' * 56 * 56:
+            return 5;
+        case 'r' + 's' * 56 + 'i' * 56 * 56:
+            return 6;
+        case 'r' + 'd' * 56 + 'i' * 56 * 56:
+            return 7;
+        case 'r' + '8' * 56:
+            return 8;
+        case 'r' + '9' * 56:
+            return 9;
+        case 'r' + '1' * 56 + '0' * 56 * 56:
+            return 10;
+        case 'r' + '1' * 56 + '1' * 56 * 56:
+            return 11;
+        case 'r' + '1' * 56 + '2' * 56 * 56:
+            return 12;
+        case 'r' + '1' * 56 + '3' * 56 * 56:
+            return 13;
+        case 'r' + '1' * 56 + '4' * 56 * 56:
+            return 14;
+        case 'r' + '1' * 56 + '5':
+            return 15;
+        default:
+            return BAD_ARGUMENT;
     }
-    else{ // not a valiable register
-        return BAD_ARGUMENT;
-    }
+//
+//     if ( buf[0] == 'r' && buf[2] == 'x' && buf[1] - 'a' < 4 ){ // push r?x qweasd
+//
+//         if ( sscanf( buf, "%*s %*s" ) == 2 ) // catching qweasd
+//             return UNKNOWN_DATA;
+//
+//         else // no qweasd, all Good
+//             return buf[1] - 'a';
+//     }
+//     else{ // not a valiable register
+//         return BAD_ARGUMENT;
+//     }
 }
