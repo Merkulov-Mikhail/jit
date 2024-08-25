@@ -1,28 +1,23 @@
-    in
+    push 6
+    pop rcx
+    push 1
+    pop rax
     call factorial
-    out
-    hlt
+    ret
 
 :factorial
+    push rcx
+    push 1
+    ja ret
+    push rax
+    push rcx
+    mul
     pop rax
 
-    push rax
+    push rcx
     push 1
-    jbe preReturn
-
-        push rax
-
-        push rax
-        push 1
-        sub
-
-        call factorial
-
-        mul
-        jmp return
-
-    :preReturn
-        push 1
-
-    :return
-ret
+    sub
+    pop rcx
+    call factorial
+:ret
+    ret

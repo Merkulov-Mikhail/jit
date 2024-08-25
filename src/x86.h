@@ -389,7 +389,7 @@ enum REGISTERS{
 	_INSTRUCTION_ADD_IMMEDIATE(imm, imm, imm, imm);\
 	NEXT_INSTRUCTION();
 
-#define JCC(op_ocde, imm) \
+#define JCC(op_code, imm) \
 	PREFIXES_INCLUDING_NEW_REGS(DEAD_VALUE, DEAD_VALUE, 0x0f);\
 	INSTRUCTION_ADD_OP_CODE(op_code, DEAD_VALUE, DEAD_VALUE);\
 	_INSTRUCTION_ADD_IMMEDIATE(imm, imm, imm, imm);\
@@ -414,6 +414,15 @@ enum REGISTERS{
 	JCC(0x85, imm);
 
 // --------------------- JUMPS END ---------------------
+
+// --------------------- CALLS START ---------------------
+
+#define CALL(imm) \
+	INSTRUCTION_ADD_OP_CODE(0xE8, DEAD_VALUE, DEAD_VALUE);\
+	_INSTRUCTION_ADD_IMMEDIATE(imm, imm, imm, imm);\
+	NEXT_INSTRUCTION();
+
+// --------------------- CALLS END ---------------------
 
 #define RETURN_COMMAND() \
 	INSTRUCTION_ADD_OP_CODE(0xc3, DEAD_VALUE, DEAD_VALUE);\

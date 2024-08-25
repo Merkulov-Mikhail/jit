@@ -51,7 +51,7 @@ int main(int argc, char* argv[]){
 
     // Shows how many bytes have been written in total
     // Used to write named labels
-    uint64_t globalUsedBytes = 16;
+    uint64_t globalUsedBytes = ASM_HEADER_SIZE;
 
     fseek(output, 0, SEEK_SET);
     fwrite( OWNER_NAME, sizeof( char ), 8, output );

@@ -1,0 +1,11 @@
+push 120
+jmp asd
+
+:qwe
+    div
+    ret
+
+:asd
+    pop rax
+    push 6
+    jmp qwe
